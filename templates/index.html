@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Egg Production Tracker</title>
+  <style>
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      max-width: 720px;
+      margin: 24px auto;
+      padding: 0 16px;
+      color: #222;
+    }
+    h1 { margin-bottom: 4px; }
+    .subtitle { color: #666; margin-top: 0; }
+    form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: flex-end;
+      padding: 16px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
+    label { display: flex; flex-direction: column; font-size: 14px; gap: 4px; }
+    input { padding: 8px; font-size: 16px; border: 1px solid #bbb; border-radius: 4px; }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 4px;
+      background: #2e7d32;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled { background: #999; cursor: not-allowed; }
+    #message { min-height: 24px; margin: 12px 0; font-weight: bold; }
+    #message.ok { color: #2e7d32; }
+    #message.error { color: #c62828; }
+    .totals { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+    .total-box {
+      padding: 10px 16px;
+      background: #f3f6f3;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .total-box strong { display: block; font-size: 22px; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f0f0f0; }
+    td.num, th.num { text-align: right; }
+    .empty { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Egg Production Tracker</h1>
+  <p class="subtitle">Log the daily egg count for each shed.</p>
+
+  <form id="egg-form">
+    <label>Shed name
+      <input type="text" id="shed" placeholder="e.g. Shed A" required>
+    </label>
+    <label>Date
+      <input type="date" id="date" required>
+    </label>
+    <label>Egg count
+      <input type="number" id="count" min="0" step="1" placeholder="e.g. 420" required>
+    </label>
+    <button type="submit" id="submit-btn">Submit</button>
+  </form>
+
+  <div id="message"></div>
+
+  <div class="totals" id="totals"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Date</th>
+          <th>Shed</th>
+          <th class="num">Eggs</th>
+          <th class="num">Running total</th>
+        </tr>
+      </thead>
+      <tbody id="records"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const form = document.getElementById("egg-form");
+    const shedInput = document.getElementById("shed");
+    const dateInput = document.getElementById("date");
+    const countInput = document.getElementById("count");
+    const submitBtn = document.getElementById("submit-btn");
+    const message = document.getElementById("message");
+    const totalsDiv = document.getElementById("totals");
+    const recordsBody = document.getElementById("records");
+
+    // Default the date field to today (local time)
+    function setToday() {
+      const now = new Date();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      dateInput.value = `${now.getFullYear()}-${month}-${day}`;
+    }
+
+    function showMessage(text, type) {
+      message.textContent = text;
+      message.className = type;
+    }
+
+    function addCell(row, text, className) {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (className) cell.className = className;
+      row.appendChild(cell);
+    }
+
+    function addTotalBox(label, value) {
+      const box = document.createElement("div");
+      box.className = "total-box";
+      const number = document.createElement("strong");
+      number.textContent = value;
+      box.appendChild(number);
+      box.appendChild(document.createTextNode(label));
+      totalsDiv.appendChild(box);
+    }
+
+    // GET all records and redraw the totals and the table
+    async function loadRecords() {
+      const response = await fetch("/api/eggs");
+      if (!response.ok) throw new Error("Could not load records");
+      const data = await response.json();
+
+      totalsDiv.textContent = "";
+      addTotalBox("Total eggs", data.total_eggs);
+      for (const [shed, total] of Object.entries(data.totals_by_shed)) {
+        addTotalBox(shed, total);
+      }
+
+      recordsBody.textContent = "";
+      if (data.records.length === 0) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.className = "empty";
+        cell.textContent = "No records yet. Add the first one above.";
+        row.appendChild(cell);
+        recordsBody.appendChild(row);
+        return;
+      }
+
+      for (const record of data.records) {
+        const row = document.createElement("tr");
+        addCell(row, record.id);
+        addCell(row, record.date);
+        addCell(row, record.shed);
+        addCell(row, record.count, "num");
+        addCell(row, record.running_total, "num");
+        recordsBody.appendChild(row);
+      }
+    }
+
+    // POST a new record, then refresh the table without reloading the page
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Saving...";
+      showMessage("", "");
+
+      const payload = {
+        shed: shedInput.value,
+        date: dateInput.value,
+        count: countInput.value === "" ? null : Number(countInput.value)
+      };
+
+      try {
+        const response = await fetch("/api/eggs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+          showMessage(result.error || "Could not save the record.", "error");
+          return;
+        }
+
+        showMessage(
+          `Saved: ${result.shed}, ${result.date}, ${result.count} eggs`,
+          "ok"
+        );
+        countInput.value = "";
+        countInput.focus();
+        await loadRecords();
+
+      } catch (err) {
+        showMessage("Could not reach the server. Is it running?", "error");
+
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit";
+      }
+    });
+
+    // On page load
+    setToday();
+    loadRecords().catch(() => {
+      showMessage("Could not load records. Is the server running?", "error");
+    });
+  </script>
+</body>
+</html>
