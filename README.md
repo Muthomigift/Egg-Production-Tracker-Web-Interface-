@@ -6,6 +6,16 @@ from a browser, and see the totals update on the same page without a reload.
 Day 18 of my AI masterclass. It builds on the Day 17 REST API by adding a browser
 interface: an HTML form that calls the Flask API with JavaScript `fetch()`.
 
+## Live demo
+
+**https://egg-production-tracker.onrender.com/**
+
+Open the link, enter a shed name, a date and an egg count, and click Submit. The table and totals update on the same page without a reload.
+
+> **Please note:**
+> - This demo runs on a free hosting plan, so **the first visit can take up to 50 seconds** while the app wakes up. After that it responds normally.
+> - Records are stored in memory, so **they are cleared whenever the app restarts or goes idle**. A production version would use a database.
+
 ## What it does
 
 - A form for the shed name, date and egg count
